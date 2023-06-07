@@ -22,25 +22,21 @@ def close_flaps(numbers_to_replace, flaps):
     return updated_flaps
 
 
-def open_flaps(number_to_open, flaps):
-    flaps[number_to_open] = True
+def open_flaps(numbers_to_open, flaps):
+    for number in numbers_to_open:
+        flaps[number - 1] = '*'  # Flap numbers are 1-based, but list indices are 0-based
     return flaps
 
 
-def is_move_possible(dice_roll, flaps, possible_combos):
-    # Create a list of the open flaps
-    open_flaps = [flap for flap in flaps if flap != '*']
+def is_move_possible(dice_roll, flaps, possible_combos, is_computer=False):
+    relevant_flaps = [flap if is_computer else flap for flap in flaps if (flap == '*' if is_computer else isinstance(flap, int))]
+    # only consider numeric values in relevant_flaps for sum operation
+    relevant_flaps_nums = [flap for flap in relevant_flaps if isinstance(flap, int)]
 
-    # If dice roll is larger than the sum of remaining flaps, no move is possible
-    if dice_roll > sum(open_flaps):
-        return False
-
-    # Check possible combinations for dice roll
     for combo in possible_combos[dice_roll]:
-        if all(num in open_flaps for num in combo):
+        if all(num in relevant_flaps_nums for num in combo):
             return True
 
-    # No possible move found
     return False
 
 
@@ -52,35 +48,29 @@ def draw_flaps(flaps):
 """
 
 
-# Now we initialize the flaps at the start of the game using the new function
-flaps = initialize_flaps()
-
-
 def computer_turn(flaps, possible_combos_one_die, possible_combos_two_dice):
-    # Check the sum of the open flaps and choose to roll one or two dice
-    dice_roll = roll_one_die() if sum(flap for flap in flaps if isinstance(flap, int)) <= 6 else roll_two_dice()
+    while True:
+        dice_roll = random.choice([roll_one_die(), roll_two_dice()])
+        print(f"Computer rolled: {dice_roll}")
 
-    print(f"\nComputer's turn!")
-    print(f"Computer rolled: {dice_roll}")
+        # Create a list of tuples (score, flaps_to_open) for all possible moves
+        possible_moves = []
+        for combo in possible_combos_two_dice[dice_roll] if dice_roll > 6 else possible_combos_one_die[dice_roll]:
+            if any((flap == '*' for flap in [flaps[num - 1] for num in combo])):
+                possible_moves.append((sum(combo), combo))
 
-    # Check if a move is possible
-    if not is_move_possible(dice_roll, flaps, possible_combos_one_die if dice_roll <= 6 else possible_combos_two_dice):
-        print("No possible moves for the computer! Ending the game...")
-        sys.exit(0)
-
-    # Open flaps
-    # Computer will always try to open the highest possible flap or combination of flaps
-    possible_combos = possible_combos_one_die[dice_roll] if dice_roll <= 6 else possible_combos_two_dice[dice_roll]
-    for combo in reversed(possible_combos):
-        if all(num not in flaps for num in combo):
-            flaps = open_flaps(combo, flaps)
-            break
-
-    print("Here's the new state of the box after the computer's turn:")
-    print(draw_flaps(flaps))
-
+        # If there are possible moves, pick the one with the highest score
+        if possible_moves:
+            best_move = max(possible_moves, key=lambda x: x[0])
+            for flap in best_move[1]:
+                if flaps[flap - 1] == '*':  # Only open flaps that are closed
+                    flaps[flap - 1] = flap
+            print("Here's the new state of the box after the computer's turn:")
+            print(draw_flaps(flaps))
+        else:
+            print("No possible moves for the computer!")
+            break  # Exit the loop when there are no possible moves left
     return flaps
-
 
 
 flaps = [1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -111,10 +101,11 @@ possible_combos_two_dice = {
 
 # Start of the game
 print("Welcome to 'Shut the Box'!")
-print("Here's the initial state of the box:")
-print(draw_flaps(flaps))
 
-while any(isinstance(flap, int) for flap in flaps):  # Keep playing as long as there are open flaps
+while True:  # The game continues until someone wins
+    print("Here's the current state of the box:")
+    print(draw_flaps(flaps))
+
     print("Player 1, it's your turn!")
     dice_roll_choice = input("Press 1 to roll one die, or 2 to roll two dice: ")
 
@@ -128,26 +119,35 @@ while any(isinstance(flap, int) for flap in flaps):  # Keep playing as long as t
     print(f"You rolled: {dice_roll}")
 
     # Check if a move is possible
-    if not is_move_possible(dice_roll, flaps, possible_combos):
-        print("No possible moves!")
-
+    if not is_move_possible(dice_roll, flaps, possible_combos, False):
+        print("No possible moves for you!")
         # Computer's turn
-        flaps = computer_turn(flaps, possible_combos_one_die, possible_combos_two_dice)
+        while True:
+            flaps = computer_turn(flaps, possible_combos_one_die, possible_combos_two_dice)
+            # If all flaps are closed (none are "*"), computer wins
+            if not any(isinstance(flap, int) for flap in flaps):
+                print("Computer won! All flaps are closed.")
+                sys.exit(0)
+            # If computer cannot make a move (no more "*"), break to player's turn
+            dice_roll = roll_one_die() if sum(flap for flap in flaps if isinstance(flap, int)) <= 6 else roll_two_dice()
+            if not is_move_possible(dice_roll, flaps, possible_combos_one_die if dice_roll <= 6 else possible_combos_two_dice, True):
+                break
+    else:
+        # Get the player's flap selections
+        flap_selections = []
+        while sum(flap_selections) != dice_roll or not all(selection in flaps for selection in flap_selections):
+            flap_selections = input(
+                f"Enter the numbers of the flaps you want to close, separated by spaces (they should add up to {dice_roll}): ")
+            flap_selections = list(map(int, flap_selections.split()))
 
-        # If there are still closed flaps, continue with player 1's turn
-        if any(isinstance(flap, int) for flap in flaps):
-            continue
-        else:
-            break
+        # Apply the player's selection
+        flaps = close_flaps(flap_selections, flaps)
+        print("Here's the new state of the box:")
+        print(draw_flaps(flaps))
 
-    # Get the player's flap selections
-    flap_selections = []
-    while sum(flap_selections) != dice_roll or not all(selection in flaps for selection in flap_selections):
-        flap_selections = input(
-            f"Enter the numbers of the flaps you want to close, separated by spaces (they should add up to {dice_roll}): ")
-        flap_selections = list(map(int, flap_selections.split()))
+        # Check if player has won (all flaps are "*")
+        if all(flap == '*' for flap in flaps):
+            print("Congratulations! You've won by closing all the flaps!")
+            sys.exit(0)
 
-    # Apply the player's selection
-    flaps = close_flaps(flap_selections, flaps)
-    print("Here's the new state of the box:")
-    print(draw_flaps(flaps))
+
